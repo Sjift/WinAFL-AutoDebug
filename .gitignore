@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# 개발용
+progress.md
+test_fixes.py
+bench_popup.py
+test_output/
+output/
+
+# 로컬 설정 (첫 실행 시 자동 생성)
+config.yaml
+
+# PyInstaller
+*.manifest
+*.log
