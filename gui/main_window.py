@@ -37,7 +37,8 @@ class MainWindow(ctk.CTk):
 
         self._update_queue = queue.Queue()
 
-        self.title("AutoDebug v3 - Crash Analysis Tool")
+        from core import __version__
+        self.title(f"AutoDebug v{__version__} - Crash Analysis Tool")
         self.geometry("900x750")
         self.minsize(800, 650)
         ctk.set_appearance_mode("dark")

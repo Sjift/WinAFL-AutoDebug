@@ -1,3 +1,5 @@
+__version__ = '1.0.0'
+
 # core 패키지 - 핵심 비즈니스 로직
 # config_manager: YAML 설정 관리
 # crash_analyzer: 크래시 분석 오케스트레이션
