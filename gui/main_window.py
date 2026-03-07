@@ -321,16 +321,7 @@ class MainWindow(ctk.CTk):
     # ============================================================
 
     def _detect_and_show_excludes(self, crash_dir: Path) -> bool:
-        """
-        제외 패턴 후보를 감지하고, 새 후보가 있으면 다이얼로그로 선택받는다.
-        선택된 패턴은 _auto_exclude에 추가되고 config에 저장된다.
-
-        Args:
-            crash_dir: 크래시 파일 디렉터리
-
-        Returns:
-            True: 패턴이 추가됨, False: 추가 없음 (후보 없음 또는 무시/취소)
-        """
+        """제외 패턴 후보를 감지하고, 새 후보가 있으면 다이얼로그로 선택받는다."""
         # 기존 제외 패턴 취합
         user_exclude = self._cfg.get('exclude', [])
         if not isinstance(user_exclude, list):

@@ -41,32 +41,17 @@ class AnalysisResult:
 
     @property
     def crash_entries(self) -> list:
-        """
-        진짜 크래시인 엔트리를 반환한다.
-        타임아웃이더라도 크래시 정보가 있으면 여기에 포함된다.
-        """
+        """진짜 크래시인 엔트리를 반환한다."""
         return [e for e in self.entries if e.is_crash]
 
     @property
     def false_positive_entries(self) -> list:
-        """
-        false positive (재현 안 됨) 엔트리를 반환한다.
-        크래시도 아니고 타임아웃도 아닌 엔트리.
-        """
+        """false positive (재현 안 됨) 엔트리를 반환한다."""
         return [e for e in self.entries if not e.is_crash and not e.timeout]
 
     @property
     def timeout_entries(self) -> list:
-        """
-        타임아웃이면서 크래시 정보가 없는 엔트리를 반환한다.
-        타임아웃이더라도 크래시 정보가 있으면 crash_entries에 분류되므로 여기서 제외.
-
-        분류 기준 (상호 배타적):
-        - crash_entries: is_crash=True (timeout 여부 무관)
-        - false_positive_entries: is_crash=False, timeout=False
-        - timeout_entries: is_crash=False, timeout=True
-        → 합산 = 전체 entries (에러 제외)
-        """
+        """타임아웃이면서 크래시 정보가 없는 엔트리를 반환한다."""
         return [e for e in self.entries if e.timeout and not e.is_crash]
 
     @property
@@ -83,14 +68,7 @@ class AnalysisResult:
 # ============================================================
 
 def write_crash_summary_md(result: AnalysisResult, out_path: Path):
-    """
-    마크다운 통합 보고서를 생성한다.
-    통계, 크래시 분류, 타임아웃, False Positive를 하나의 파일에 포함한다.
-
-    Args:
-        result: 전체 분석 결과
-        out_path: 출력 디렉터리
-    """
+    """마크다운 통합 보고서(CrashSummary.md)를 생성한다."""
     summary_path = out_path / 'CrashSummary.md'
     groups = result.crash_groups
     total = len(result.entries)
@@ -469,14 +447,7 @@ def _build_html_list_section(title: str, entries: list) -> str:
 
 
 def write_html_report(result: AnalysisResult, out_path: Path):
-    """
-    오프라인 HTML 시각 보고서를 생성한다.
-    CSS와 JS가 임베딩된 단일 HTML 파일.
-
-    Args:
-        result: 전체 분석 결과
-        out_path: 출력 디렉터리
-    """
+    """오프라인 HTML 시각 보고서(AnalysisReport.html)를 생성한다."""
     report_path = out_path / 'AnalysisReport.html'
     total = len(result.entries)
     crash_count = len(result.crash_entries)
@@ -542,20 +513,7 @@ def write_html_report(result: AnalysisResult, out_path: Path):
 # ============================================================
 
 def copy_crashes_to_folders(result: AnalysisResult, out_path: Path):
-    """
-    시그니처별 폴더를 생성하고 크래시 파일 + 로그를 복사한다.
-    write_results()에서 단일 스레드로 호출되므로 별도 락 불필요.
-
-    폴더 구조:
-        out_path/
-        ├── real_crashes/          # 진짜 크래시 (시그니처별)
-        ├── timeouts/              # 타임아웃 (크래시 미발생)
-        └── false_positives/       # FP만
-
-    Args:
-        result: 전체 분석 결과
-        out_path: 출력 디렉터리
-    """
+    """시그니처별 폴더를 생성하고 크래시 파일 + 로그를 복사한다."""
     real_dir = out_path / 'real_crashes'
     timeout_dir = out_path / 'timeouts'
     false_dir = out_path / 'false_positives'
@@ -599,14 +557,7 @@ def copy_crashes_to_folders(result: AnalysisResult, out_path: Path):
 # ============================================================
 
 def write_results(result: AnalysisResult, out_path: Path, mode: str = 'both'):
-    """
-    설정에 따라 적절한 출력 방식으로 결과를 저장한다.
-
-    Args:
-        result: 전체 분석 결과
-        out_path: 출력 디렉터리
-        mode: 'summary' (보고서만), 'folders' (폴더 분류만), 'both' (둘 다)
-    """
+    """설정에 따라 적절한 출력 방식으로 결과를 저장한다."""
     out_path.mkdir(parents=True, exist_ok=True)
 
     if mode in ('summary', 'both'):

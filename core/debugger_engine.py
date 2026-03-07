@@ -28,38 +28,23 @@ CDB_SEARCH_PATHS = [
 
 
 def _find_cdb() -> str:
-    """
-    CDB 실행 파일 경로를 자동 탐색한다.
-    1. PATH 환경변수에서 탐색 (shutil.which)
-    2. Windows SDK 설치 경로에서 탐색
-    3. 실패 시 'cdb' 반환 (PATH에 의존)
-
-    Returns:
-        CDB 실행 파일 경로
-    """
-    # 1. PATH에서 탐색
+    """CDB 실행 파일 경로를 자동 탐색한다. PATH → Windows SDK → 폴백."""
+    # PATH에서 탐색
     found = shutil.which('cdb')
     if found:
         return found
 
-    # 2. Windows SDK 경로 탐색
+    # Windows SDK 경로 탐색
     for path in CDB_SEARCH_PATHS:
         if path.is_file():
             return str(path)
 
-    # 3. 폴백
+    # 폴백
     return 'cdb'
 
 
 def _kill_process_tree(pid: int):
-    """
-    프로세스와 모든 자식 프로세스를 강제 종료한다.
-    taskkill /F /T 로 프로세스 트리 전체를 종료하여
-    디버거가 띄운 대상 프로그램(자식)이 남지 않도록 한다.
-
-    Args:
-        pid: 종료할 프로세스의 PID
-    """
+    """프로세스와 모든 자식 프로세스를 강제 종료한다. 디버거가 띄운 대상 프로그램이 남지 않도록 한다."""
     try:
         subprocess.run(
             ['taskkill', '/F', '/T', '/PID', str(pid)],
@@ -76,14 +61,6 @@ def _is_log_complete(log_path: Path) -> bool:
     로그 파일 끝에 'quit:' 마커가 있는지 확인한다.
     WinDbgX는 qq 명령 후에도 UI 프로세스가 종료되지 않으므로,
     로그 파일에 quit: 마커가 기록되면 분석 완료로 판단한다.
-
-    파일 끝 64바이트만 읽으므로 I/O 부담 최소.
-
-    Args:
-        log_path: 로그 파일 경로
-
-    Returns:
-        True면 로그 기록 완료 (qq 실행됨)
     """
     try:
         if not log_path.exists():
@@ -120,19 +97,7 @@ class DebuggerEngine(ABC):
         timeout: Optional[float] = None,
         stop_event: Optional[threading.Event] = None,
     ) -> DebugResult:
-        """
-        크래시 파일로 대상 프로그램을 디버거로 실행한다.
-
-        Args:
-            exe_path: 대상 실행 파일 경로
-            crash_file: 크래시 입력 파일 경로
-            log_path: 디버그 로그 저장 경로
-            timeout: 타임아웃 (초). None이면 무제한.
-            stop_event: 중지 시그널. set()되면 즉시 프로세스 종료.
-
-        Returns:
-            DebugResult 객체
-        """
+        """크래시 파일로 대상 프로그램을 디버거로 실행한다."""
         pass
 
     @abstractmethod
@@ -148,18 +113,7 @@ class DebuggerEngine(ABC):
         stop_event: Optional[threading.Event],
         early_complete_check: Optional[Callable[[], bool]] = None,
     ):
-        """
-        프로세스 완료를 폴링 방식으로 대기한다.
-        CDB/WinDbgX 공통 폴링 루프를 통합한다.
-
-        Args:
-            proc: 실행 중인 프로세스
-            result: 결과 객체 (timeout/error 필드가 설정됨)
-            timeout: 타임아웃 (초). None이면 무제한.
-            stop_event: 중지 시그널. set()되면 즉시 프로세스 종료.
-            early_complete_check: 추가 완료 조건 콜백 (WinDbgX 로그 완료 감지용).
-                                  True 반환 시 프로세스를 종료하고 정상 완료 처리.
-        """
+        """프로세스 완료를 폴링 방식으로 대기한다. CDB/WinDbgX 공통."""
         start_time = time.time()
         while True:
             # 프로세스 종료 체크
@@ -190,15 +144,7 @@ class DebuggerEngine(ABC):
 
     @staticmethod
     def _read_log(result: 'DebugResult', log_path: Path, encoding: str = 'utf-8'):
-        """
-        로그 파일에서 디버거 출력을 읽어 result.output에 저장한다.
-        encoding이 utf-8이 아니면 읽은 후 UTF-8로 재저장한다.
-
-        Args:
-            result: 결과 객체
-            log_path: 로그 파일 경로
-            encoding: 로그 파일 인코딩 (CDB: cp949, WinDbgX: utf-8)
-        """
+        """로그 파일에서 디버거 출력을 읽어 result.output에 저장한다."""
         try:
             if log_path.exists():
                 result.output = log_path.read_text(encoding=encoding, errors='replace')
@@ -213,15 +159,10 @@ class CDBEngine(DebuggerEngine):
     """
     CDB (Console Debugger) 엔진.
     -logo 옵션으로 로그 파일에 직접 기록한다.
-    stdout 파이프 방식은 파이프 버퍼 데드락 문제가 있어 사용하지 않는다.
-    (파이프 64KB 버퍼 초과 시 CDB가 쓰기 블로킹 → 영구 멈춤)
+    stdout 파이프 방식은 64KB 버퍼 초과 시 데드락이 발생하므로 사용하지 않는다.
     """
 
     def __init__(self, cdb_path: str = ''):
-        """
-        Args:
-            cdb_path: CDB 실행 파일 경로. 빈 문자열이면 자동 탐색.
-        """
         self._cdb_path = cdb_path if cdb_path else _find_cdb()
 
     def get_engine_name(self) -> str:
@@ -239,20 +180,10 @@ class CDBEngine(DebuggerEngine):
         CDB로 크래시 파일을 디버깅한다.
 
         CDB 플래그:
-        - -g: 초기 브레이크포인트(loader BP) 무시
-        - -G: 최종 브레이크포인트(process exit BP) 무시
+        - -g: 초기 브레이크포인트 무시, -G: 최종 브레이크포인트 무시
         - -o: 자식 프로세스 디버깅
-        - -logo: 로그 파일에 출력 기록 (overwrite)
-                 stdout 파이프 대신 사용하여 버퍼 데드락 방지.
-                 파일에 실시간 기록되므로 타임아웃 시에도 부분 로그 확보 가능.
-
-        -c 명령 시퀀스 (세미콜론 분리, 순차 실행):
-        - g        : 프로그램 실행. 세미콜론 뒤 나머지 명령은 크래시(debug event) 발생까지 대기
-        - .exr -1  : 마지막 예외 레코드 출력 (ExceptionCode, ExceptionAddress)
-        - .ecxr    : 예외 발생 시점으로 컨텍스트 전환 (이후 kn이 실제 크래시 스택을 보여줌)
-        - kn       : 프레임 번호 포함 스택 트레이스
-        - !analyze -v : BUCKET_ID 등 종합 자동 분석
-        - q        : 디버거 종료
+        - -logo: 로그 파일에 출력 기록 (stdout 파이프 대신 사용)
+        - -c: 디버거 명령 시퀀스 (g→.exr→.ecxr→kn→!analyze→q)
         """
         command = [
             self._cdb_path,
@@ -292,16 +223,11 @@ class CDBEngine(DebuggerEngine):
 class WinDbgXEngine(DebuggerEngine):
     """
     WinDbgX (Preview) 엔진.
-    GUI 기반 디버거로, -logo 옵션으로 로그 파일에 출력을 기록한다.
-    로그 파일을 읽어서 결과를 반환한다.
-    CDB와 동일한 명령 시퀀스를 사용하여 로그 포맷을 통일한다.
+    -logo 옵션으로 로그 파일에 출력을 기록한다.
+    CDB와 동일한 명령 시퀀스를 사용하되 qq로 전체 종료 (클라이언트-서버 구조).
     """
 
     def __init__(self, windbgx_path: str = ''):
-        """
-        Args:
-            windbgx_path: WinDbgX 실행 파일 경로. 빈 문자열이면 PATH에서 탐색.
-        """
         self._windbgx_path = windbgx_path if windbgx_path else 'windbgx'
 
     def get_engine_name(self) -> str:
@@ -319,22 +245,9 @@ class WinDbgXEngine(DebuggerEngine):
         WinDbgX로 크래시 파일을 디버깅한다.
 
         WinDbgX 플래그:
-        - -g: 초기 브레이크포인트(loader BP) 무시
-        - -G: 최종 브레이크포인트(process exit BP) 무시
-        - -o: 자식 프로세스 디버깅
-        - -Q: "Save Workspace?" 다이얼로그 억제 (자동화 차단 방지)
-
-        -c 명령 시퀀스 (CDB와 동일, 단 종료 명령만 다름):
-        - g        : 프로그램 실행. 나머지 명령은 크래시(debug event) 발생까지 대기
-        - .exr -1  : 마지막 예외 레코드 출력 (ExceptionCode, ExceptionAddress)
-        - .ecxr    : 예외 발생 시점으로 컨텍스트 전환
-        - kn       : 프레임 번호 포함 스택 트레이스
-        - !analyze -v : BUCKET_ID 등 종합 자동 분석
-        - qq       : 디버거 강제 종료 (WinDbgX는 클라이언트-서버 구조라
-                     q만 쓰면 클라이언트만 종료되고 서버가 남음. qq로 전체 종료)
-
-        -logo: 기존 -loga(append)에서 overwrite로 변경.
-               크래시별 개별 로그 파일을 사용하므로 덮어쓰기가 적절.
+        - -g/-G/-o: CDB와 동일 (브레이크포인트 무시, 자식 프로세스 디버깅)
+        - -Q: "Save Workspace?" 다이얼로그 억제
+        - -c: 디버거 명령 시퀀스 (qq로 전체 종료)
         """
         command = [
             self._windbgx_path,
@@ -370,18 +283,7 @@ class WinDbgXEngine(DebuggerEngine):
 
 
 def create_engine(cfg: dict) -> DebuggerEngine:
-    """
-    설정에 따라 적절한 디버거 엔진을 생성한다.
-
-    Args:
-        cfg: 전체 설정 딕셔너리 (debugger 섹션 사용)
-
-    Returns:
-        DebuggerEngine 인스턴스
-
-    Raises:
-        ValueError: 지원하지 않는 엔진 이름일 때
-    """
+    """설정에 따라 적절한 디버거 엔진을 생성한다."""
     debugger_cfg = cfg.get('debugger', {})
     engine_name = debugger_cfg.get('engine', 'cdb').lower()
 

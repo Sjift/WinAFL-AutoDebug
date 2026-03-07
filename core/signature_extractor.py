@@ -27,13 +27,8 @@ GENERIC_EXCEPTION_FUNCS = frozenset({
 })
 
 
-# 모듈!함수+오프셋 패턴 (C++ 네임스페이스/클래스/연산자 포함)
-# 예: HncFoundation!CHncPropertySection::Get+0x55
-# 예: VCRUNTIME140!memset+0x3c
-# 예: ntdll!RtlpWaitOnCriticalSection+0x1ae
-# 예: HwpApp!CActionPreviewManagerImpl::operator=+0x2f502
-# [^\s()+]+ → 공백/괄호/+ 제외 모든 문자 허용 (=, <, >, *, ~ 등 C++ 연산자)
-# +를 제외하므로 오프셋 구분자 +0x와 충돌 없음
+# 모듈!함수+오프셋 패턴 (C++ 연산자 포함)
+# [^\s()+]+ → 공백/괄호/+ 제외 모든 문자 허용
 SIGNATURE_PATTERN = re.compile(
     r'([A-Za-z0-9_]+![^\s()+]+\+0x[0-9A-Fa-f]+)'
 )
@@ -46,9 +41,7 @@ STACK_MARKER_X64 = ' # Child-SP          RetAddr'
 # g; deferred 명령 실행 라인 패턴
 DEFERRED_CMD_PATTERN = re.compile(r'g;\s*\.exr')
 
-# 디스어셈블리 라인 패턴
-# 예: 69c5a798 663b470e        cmp     ax,word ptr [edi+0Eh]    ds:002b:1ae72000=????
-# 그룹1: 주소, 그룹2: 바이트코드, 그룹3: 명령어 (segment descriptor 제외)
+# 디스어셈블리 라인 패턴 (주소, 바이트코드, 명령어)
 DISASM_PATTERN = re.compile(
     r'^([0-9a-f]{7,16})\s+([0-9a-f]+)\s{2,}(.+?)(?:\s{2,}[a-z]s:|\s*$)',
     re.IGNORECASE
@@ -74,19 +67,7 @@ class CrashInfo:
 
 
 def normalize_signature(sig: str) -> str:
-    """
-    시그니처의 오프셋 leading zero를 제거하여 정규화한다.
-    ExceptionAddress(+0x00035c47)와 kn(+0x35c47)의 동일 오프셋을 통일한다.
-
-    예: module!func+0x0002f502 → module!func+0x2f502
-        module!func+0x20 → module!func+0x20 (변경 없음)
-
-    Args:
-        sig: module!function+offset 형식 시그니처
-
-    Returns:
-        정규화된 시그니처
-    """
+    """시그니처의 오프셋 leading zero를 제거하여 정규화한다."""
     m = re.match(r'^(.+\+0x)0*([0-9A-Fa-f]+)$', sig)
     if m:
         return m.group(1) + m.group(2)
@@ -94,20 +75,7 @@ def normalize_signature(sig: str) -> str:
 
 
 def extract_exception_address(output: str) -> str:
-    """
-    .exr -1 또는 !analyze -v 출력에서 ExceptionAddress의 심볼을 추출한다.
-
-    형식: ExceptionAddress: 69881082 (HwpApp!CActionPreviewManagerImpl::operator=+0x0002f502)
-
-    이 값은 실제 예외 발생 주소로, g; 이전 추출 실패 시 가장 정확한 fallback.
-    g; 이후 deferred 명령 출력에서만 나타나므로, real crash에서만 존재한다.
-
-    Args:
-        output: 디버거 전체 출력
-
-    Returns:
-        module!function+offset (정규화됨). 없으면 빈 문자열.
-    """
+    """ExceptionAddress에서 module!function+offset 심볼을 추출한다."""
     for line in output.splitlines():
         stripped = line.strip()
         if stripped.startswith('ExceptionAddress:'):
@@ -118,21 +86,7 @@ def extract_exception_address(output: str) -> str:
 
 
 def extract_exception_code(output: str) -> Tuple[str, str]:
-    """
-    g; 이후 deferred 명령 출력에서 ExceptionCode와 예외 종류를 추출한다.
-
-    형식: ExceptionCode: c0000005 (Access violation)
-
-    g; 이후 .exr -1 출력에서만 추출하여, g; 이전의 first-chance 예외와 혼동을 방지한다.
-
-    Args:
-        output: 디버거 전체 출력
-
-    Returns:
-        (exception_code, exception_type) 튜플.
-        예: ("c0000005", "Access violation")
-        추출 실패 시 ('', '') 반환
-    """
+    """g; 이후 deferred 출력에서 ExceptionCode와 예외 종류를 추출한다."""
     lines = output.splitlines()
     after_g = False
 
@@ -160,46 +114,28 @@ def extract_exception_code(output: str) -> Tuple[str, str]:
 def is_real_crash(output: str) -> bool:
     """
     디버거 출력에서 진짜 크래시(재현 O) 여부를 판별한다.
-    CDB/WinDbgX 공통으로 사용하는 통합 판별 로직이다.
 
     핵심 원리 — deferred 명령의 "전부 실행 또는 전부 미실행":
-      -c "g; .exr -1; .ecxr; kn; !analyze -v; q" 에서
       g; 이후 나머지 명령은 크래시(debug event) 발생까지 대기(deferred)
       - 크래시 발생(real) → deferred 명령 전부 실행 → 분석 출력 존재
-      - 크래시 미발생(fake) → 프로세스 정상 종료 → deferred 명령 전부 미실행 → 분석 출력 없음
+      - 크래시 미발생(fake) → 프로세스 정상 종료 → deferred 명령 전부 미실행
 
     판별 기준 (3단계):
-    1. AFL 퍼저 통계 (##########, total:) → false positive
-    2. FAILURE_BUCKET_ID: 존재 → real crash (!analyze -v 완료)
-    3. ExceptionCode: c 존재 → real crash (타임아웃으로 !analyze 미완료 시 백업)
-       - .exr -1 출력 형식: "   ExceptionCode: c0000005 (Access violation)"
-       - fake는 deferred 미실행 → ExceptionCode 출력 자체가 없음 → 오판 불가
+    1. AFL 퍼저 통계 → false positive
+    2. FAILURE_BUCKET_ID → real crash (!analyze -v 완료)
+    3. ExceptionCode: c → real crash (타임아웃으로 !analyze 미완료 시 백업)
     4. 나머지 → false positive
-
-    ※ second chance는 판별 기준에서 제외:
-       id_000087처럼 second chance 없이도 real crash인 경우 존재
-       (g; 이후 별개의 새 예외가 first-chance로 발생 → deferred 실행)
-       ExceptionCode 체크가 second chance를 완전히 포함(상위 호환)함
-
-    Args:
-        output: 디버거 전체 출력
-
-    Returns:
-        진짜 크래시(재현 O)이면 True
     """
     # Step 1: AFL/퍼저 통계 출력 → false positive
     if "##########" in output and "total:" in output:
         return False
 
-    # Step 2: !analyze -v 완료 → real crash (최우선 지표)
-    # FAILURE_BUCKET_ID는 !analyze -v의 최종 분석 결과에만 나타남
+    # Step 2: !analyze -v 완료 → real crash
     if "FAILURE_BUCKET_ID:" in output:
         return True
 
-    # Step 3: 타임아웃으로 !analyze -v 미완료, 하지만 크래시는 발생함
-    # .exr -1 출력의 ExceptionCode: c → deferred 명령이 실행됨 = 크래시 발생
-    # fake 파일은 deferred 명령 미실행 → ExceptionCode 출력 없음 → 오판 불가
-    if "ExceptionCode:" in output:  # 사전 체크로 불필요한 라인 순회 회피
+    # Step 3: ExceptionCode: c → 크래시 발생 (타임아웃으로 !analyze 미완료 시)
+    if "ExceptionCode:" in output:
         for line in output.splitlines():
             stripped = line.strip()
             if stripped.startswith("ExceptionCode:"):
@@ -209,32 +145,11 @@ def is_real_crash(output: str) -> bool:
                     return True
 
     # Step 4: 나머지 → false positive
-    # - first-chance Access violation만 있는 경우 (뷰어 내부 handled exception)
-    # - 빈 로그, 모듈 로드만 있는 경우
     return False
 
 
 def extract_first_av_info(output: str) -> Tuple[str, str]:
-    """
-    g; 이전의 첫 AV 덤프에서 크래시 지점과 어셈블리 명령어를 추출한다.
-
-    g; 명령 실행 라인 이전에 나타나는 레지스터 덤프 + 디스어셈블리에서 추출:
-      module!function+offset:              ← 크래시 지점
-      address bytes        instruction     ← 어셈블리 명령어
-      0:NNN> g; .exr -1; ...               ← g; 명령 라인
-
-    이 정보는 CDB/WinDbg가 첫 번째 예외에서 브레이크할 때 출력되며,
-    g; 이후 deferred 명령이 다른 스레드의 예외를 캡처하는 문제를 회피한다.
-
-    Args:
-        output: 디버거 전체 출력
-
-    Returns:
-        (crash_point, faulting_instruction) 튜플.
-        crash_point: module!function+offset (예: "HwpApp!...Release+0xbdaa3")
-        faulting_instruction: 어셈블리 명령어 (예: "mov eax,dword ptr [esi+60h]")
-        추출 실패 시 ('', '') 반환
-    """
+    """g; 이전의 첫 AV 덤프에서 크래시 지점과 어셈블리 명령어를 추출한다."""
     lines = output.splitlines()
 
     # g; 명령 라인 찾기 (deferred 명령 실행 라인)
@@ -283,19 +198,7 @@ def extract_first_av_info(output: str) -> Tuple[str, str]:
 def extract_signature(output: str, strategy: str = 'first') -> CrashInfo:
     """
     디버거 출력에서 크래시 시그니처를 추출한다.
-
-    추출 우선순위:
-    1. g; 이전 AV 덤프 (범용 함수 필터링 적용)
-    2. ExceptionAddress (.exr -1 / !analyze -v 출력)
-    3. kn 스택 frame 00 (strategy='first') 또는 최하단 (strategy='last')
-    4. UNKNOWN
-
-    Args:
-        output: 디버거 전체 출력
-        strategy: 'first' (kn frame 00, 기본) 또는 'last' (kn 최하단)
-
-    Returns:
-        CrashInfo 객체
+    우선순위: g;이전 AV → ExceptionAddress → kn fallback → UNKNOWN
     """
     info = CrashInfo()
     info.is_crash = is_real_crash(output)
@@ -372,16 +275,5 @@ def extract_signature(output: str, strategy: str = 'first') -> CrashInfo:
 
 
 def get_crash_folder_name(signature: str) -> str:
-    """
-    시그니처를 폴더명으로 사용할 수 있는 형식으로 변환한다.
-    '!'와 ':'를 '_'로 대체한다.
-
-    예: "HncFilter!CFilter::Parse+0x1234" → "HncFilter_CFilter__Parse+0x1234"
-
-    Args:
-        signature: module!function+offset 형식 시그니처
-
-    Returns:
-        파일시스템 안전한 폴더명
-    """
+    """시그니처를 파일시스템 안전한 폴더명으로 변환한다."""
     return signature.replace('!', '_').replace(':', '_')

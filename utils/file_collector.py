@@ -4,8 +4,6 @@
 크래시 파일 디렉터리를 재귀 탐색하여 분석 대상 파일을 수집한다.
 gitignore 스타일 패턴으로 비크래시 파일을 제외하고,
 자동 감지 기능으로 제외 후보를 추천한다.
-
-기존 Auto_Debug v1의 file_collector 로직을 이식/확장했다.
 """
 
 import fnmatch
@@ -25,23 +23,7 @@ KNOWN_NON_CRASH_FILES = {
 
 
 def match_exclude_pattern(relative_path: str, pattern: str) -> bool:
-    """
-    gitignore 스타일 패턴 매칭을 수행한다.
-
-    지원 패턴:
-    - 'README.md'      : 모든 위치의 README.md 파일
-    - '*.log'          : 모든 위치의 .log 확장자 파일
-    - '.state/'        : 경로에 .state 폴더가 포함된 모든 파일
-    - '**/debug/'      : 경로에 debug 폴더가 포함된 모든 파일
-    - 'master/*.tmp'   : master 폴더 바로 아래의 .tmp 파일
-
-    Args:
-        relative_path: crash_dir 기준 상대 경로
-        pattern: 제외 패턴
-
-    Returns:
-        매칭 여부
-    """
+    """gitignore 스타일 패턴 매칭을 수행한다."""
     path = PurePath(relative_path)
     parts = path.parts
     filename = path.name
@@ -64,17 +46,7 @@ def match_exclude_pattern(relative_path: str, pattern: str) -> bool:
 
 
 def collect_crash_files(crash_dir: Path, exclude_patterns: list) -> list:
-    """
-    crash_dir 하위의 모든 파일을 재귀적으로 탐색하여 크래시 파일 목록을 반환한다.
-    제외 패턴에 매칭되는 파일은 건너뛴다.
-
-    Args:
-        crash_dir: 크래시 파일이 위치한 최상위 디렉터리
-        exclude_patterns: 제외 패턴 리스트 (gitignore 스타일)
-
-    Returns:
-        크래시 파일 Path 객체 리스트 (정렬됨)
-    """
+    """crash_dir 하위의 파일을 재귀 탐색하여 제외 패턴을 적용한 크래시 파일 목록을 반환한다."""
     crash_files = []
 
     for path in crash_dir.rglob('*'):
@@ -83,7 +55,7 @@ def collect_crash_files(crash_dir: Path, exclude_patterns: list) -> list:
 
         relative_path = str(path.relative_to(crash_dir))
 
-        # 제외 패턴 체크 (any()는 short-circuit 평가로 첫 매칭 시 즉시 반환)
+        # 제외 패턴 체크
         if not any(match_exclude_pattern(relative_path, p) for p in exclude_patterns):
             crash_files.append(path)
 
@@ -91,21 +63,7 @@ def collect_crash_files(crash_dir: Path, exclude_patterns: list) -> list:
 
 
 def detect_exclude_candidates(crash_dir: Path) -> tuple:
-    """
-    crash_dir을 분석하여 비크래시 파일 제외 추천 항목을 반환한다.
-    알려진 비크래시 파일(README.md 등), 텍스트 확장자, 메타 폴더를 감지한다.
-
-    Args:
-        crash_dir: 크래시 파일 디렉터리
-
-    Returns:
-        (candidates_dict, total_files) 튜플
-        candidates_dict = {
-            'files': [(filename, count), ...],
-            'extensions': [(pattern, count), ...],
-            'folders': [(pattern, 0), ...],
-        }
-    """
+    """crash_dir을 분석하여 비크래시 파일 제외 추천 항목을 반환한다."""
     file_counts = Counter()
     ext_counts = Counter()
     folder_set = set()
@@ -144,16 +102,7 @@ def detect_exclude_candidates(crash_dir: Path) -> tuple:
 
 
 def get_new_exclude_candidates(candidates: dict, existing_patterns: list) -> list:
-    """
-    기존 패턴에 없는 새로운 추천 항목만 반환한다.
-
-    Args:
-        candidates: detect_exclude_candidates()의 반환값
-        existing_patterns: 기존 exclude + _auto_exclude 패턴 리스트
-
-    Returns:
-        새로운 추천 항목 리스트 [(pattern, count, type), ...]
-    """
+    """기존 패턴에 없는 새로운 추천 항목만 반환한다."""
     new_items = []
     existing_set = set(existing_patterns)
 
@@ -177,19 +126,7 @@ def prompt_user_selection(
     batch_mode: bool = False,
     callback: Optional[Callable] = None,
 ) -> list:
-    """
-    사용자에게 제외 항목 선택을 요청한다.
-    CLI 모드에서는 콘솔 프롬프트를, GUI 모드에서는 callback을 사용한다.
-
-    Args:
-        new_candidates: [(pattern, count, type), ...]
-        batch_mode: True면 프롬프트 없이 빈 리스트 반환
-        callback: GUI 모드용 콜백 함수. None이면 CLI 모드 사용.
-                  callback(candidates) -> selected_patterns 형식
-
-    Returns:
-        사용자가 선택한 패턴 리스트
-    """
+    """사용자에게 제외 항목 선택을 요청한다. CLI/GUI 양쪽 지원."""
     if batch_mode or not new_candidates:
         return []
 

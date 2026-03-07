@@ -4,13 +4,6 @@
 범용적인 팝업 윈도우 자동 처리기.
 ctypes Win32 API 직접 호출로 팝업 윈도우를 감지하고 닫는다.
 데몬 스레드로 동작하며, 설정에서 타겟을 추가/수정/삭제할 수 있다.
-
-스캔 루프: GetWindowTextW(캐시 기반, 블로킹 없음) + GetWindowRect로 ~1-3ms/회.
-닫기: PostMessageW로 WM_CLOSE/SC_CLOSE를 비동기 발사, 닫힘 확인은 다음 스캔에서 수행.
-
-기존 pywinauto의 SendMessage(WM_GETTEXT) 방식은 CDB에 정지된 프로세스 윈도우에
-500ms+/개 블로킹되어 스캔 1회에 수십 초 소요되는 문제가 있었다.
-GetWindowTextW는 윈도우 매니저 내부 캐시를 사용하여 프로세스 상태와 무관하게 즉시 반환.
 """
 
 import re
@@ -52,14 +45,7 @@ _GetWindowThreadProcessId = _user32.GetWindowThreadProcessId
 
 
 def _enum_visible_windows() -> list[tuple[int, str, int, int]]:
-    """
-    현재 보이는 모든 최상위 윈도우를 열거한다.
-    ctypes GetWindowTextW는 윈도우 매니저 내부 캐시를 사용하므로
-    대상 프로세스가 정지 상태여도 블로킹 없이 즉시 반환된다.
-
-    Returns:
-        [(hwnd, title, width, height), ...] 리스트
-    """
+    """현재 보이는 모든 최상위 윈도우를 열거한다."""
     results = []
     _buf = ctypes.create_unicode_buffer(256)
     _rect = ctypes.wintypes.RECT()
@@ -120,13 +106,7 @@ class PopupTarget:
 
 
 def _kill_process_by_pid(pid: int):
-    """
-    프로세스를 강제 종료한다.
-    kill 액션에서 사용하며, taskkill /F /T로 프로세스 트리 전체를 종료한다.
-
-    Args:
-        pid: 종료할 프로세스의 PID
-    """
+    """프로세스를 강제 종료한다. taskkill /F /T로 프로세스 트리 전체를 종료."""
     import subprocess
     try:
         subprocess.run(
@@ -152,12 +132,6 @@ class PopupHandler:
         scan_interval: float = 0.1,
         enabled: bool = False,
     ):
-        """
-        Args:
-            targets: PopupTarget 리스트
-            scan_interval: 팝업 스캔 주기 (초)
-            enabled: 핸들러 활성화 여부
-        """
         self._targets = targets or []
         self._targets_lock = threading.Lock()  # 타겟 리스트 동기화
         self._scan_interval = scan_interval
@@ -207,14 +181,7 @@ class PopupHandler:
         logger.info("팝업 핸들러 정지됨")
 
     def _scan_loop(self):
-        """
-        메인 스캔 루프 (Non-blocking, ctypes 직접 호출).
-
-        GetWindowTextW(캐시 기반)로 윈도우를 열거하여 CDB 정지 프로세스에도
-        블로킹 없이 ~1-3ms에 전체 스캔을 완료한다.
-        매칭된 팝업에 PostMessageW로 비동기 닫기를 발사하고,
-        닫힘 확인은 다음 스캔에서 수행한다.
-        """
+        """메인 스캔 루프. Non-blocking ctypes 직접 호출로 윈도우를 열거하고 처리한다."""
         while not self._stop_event.is_set():
             matched_hwnds = set()  # 이번 스캔에서 매칭된 hwnd 추적
             try:
@@ -240,20 +207,7 @@ class PopupHandler:
             self._stop_event.wait(self._scan_interval)
 
     def _handle_popup(self, hwnd: int, target: PopupTarget, title: str):
-        """
-        매칭된 팝업 윈도우를 Non-blocking 방식으로 처리한다.
-
-        close 액션: PostMessageW로 WM_CLOSE + SC_CLOSE를 비동기 연속 발사 (~0.1ms).
-        닫힘 확인은 다음 스캔 주기(0.1초 후)에서 자동으로 수행된다.
-        팝업이 아직 열려 있으면 다음 스캔에서 자동 재시도된다.
-
-        kill 액션: GetWindowThreadProcessId로 PID 추출 후 taskkill.
-
-        Args:
-            hwnd: 윈도우 핸들
-            target: 매칭된 PopupTarget
-            title: 윈도우 제목
-        """
+        """매칭된 팝업 윈도우를 Non-blocking 방식으로 처리한다."""
         # 시도 횟수 추적 — (count, first_seen, title)
         now = time.time()
         if hwnd in self._popup_attempts:
@@ -294,14 +248,7 @@ class PopupHandler:
             pass  # 윈도우가 이미 사라졌을 수 있음
 
     def scan_once(self) -> list:
-        """
-        테스트 모드: 현재 열린 윈도우를 한 번 스캔하여
-        타겟과 매칭되는 윈도우 목록을 반환한다.
-        실제로 닫지는 않는다.
-
-        Returns:
-            매칭된 윈도우 정보 리스트 [(title, width, height, target_pattern), ...]
-        """
+        """테스트 모드: 타겟과 매칭되는 윈도우를 스캔하여 반환한다. 실제로 닫지는 않는다."""
         with self._targets_lock:
             targets_snapshot = list(self._targets)
 
@@ -319,15 +266,7 @@ class PopupHandler:
 
 
 def create_popup_handler(cfg: dict) -> PopupHandler:
-    """
-    설정 딕셔너리에서 PopupHandler를 생성한다.
-
-    Args:
-        cfg: 전체 설정 딕셔너리 (popup_handler 섹션 사용)
-
-    Returns:
-        PopupHandler 인스턴스
-    """
+    """설정 딕셔너리에서 PopupHandler를 생성한다."""
     # None 방어: cfg['popup_handler']가 None일 수 있음 (YAML 파싱 또는 취소된 다이얼로그)
     popup_cfg = cfg.get('popup_handler') or {}
     targets = []

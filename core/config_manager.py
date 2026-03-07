@@ -2,7 +2,6 @@
 설정 관리 모듈 (config_manager.py)
 
 YAML 기반 설정 파일의 로드, 저장, 검증, 마이그레이션을 담당한다.
-기존 Auto_Debug의 주석 보존 저장 로직을 확장하여 사용한다.
 """
 
 import yaml
@@ -48,11 +47,6 @@ DEFAULT_CONFIG = {
         'enabled': False,           # 팝업 핸들러 활성화 여부
         'scan_interval': 0.1,       # 팝업 스캔 주기 (초)
         'targets': [],              # 팝업 타겟 리스트
-        # 타겟 예시:
-        # - title_pattern: "뷰어"
-        #   max_width: 600
-        #   max_height: 400
-        #   action: "close"
     },
 
     # 제외 패턴 (gitignore 스타일)
@@ -110,22 +104,10 @@ popup_handler:
   enabled: false         # 팝업 핸들러 활성화 여부
   scan_interval: 0.1     # 팝업 스캔 주기 (초)
   targets: []            # 팝업 타겟 리스트
-  # 타겟 예시:
-  # targets:
-  #   - title_pattern: "뷰어"
-  #     max_width: 600
-  #     max_height: 400
-  #     action: "close"
 
 # ============================================================
 # 제외 패턴 (gitignore 스타일)
 # ============================================================
-# 사용법:
-#   - 'README.md'    : 모든 위치의 README.md
-#   - '*.log'        : 모든 .log 파일
-#   - '.state/'      : .state 폴더 내 모든 파일
-#   - '**/debug/'    : 모든 debug 폴더 내 파일
-#   - 'master/*.tmp' : master 폴더 바로 아래 .tmp 파일
 exclude: []
 
 # ============================================================
@@ -137,18 +119,7 @@ _last_crash_dir: ""  # 마지막으로 사용한 crash_dir (변경 감지용)
 
 
 def deep_merge(base: dict, override: dict) -> dict:
-    """
-    두 딕셔너리를 깊은 병합한다.
-    override에 있는 값이 base의 값을 덮어쓴다.
-    중첩된 딕셔너리는 재귀적으로 병합한다.
-
-    Args:
-        base: 기본값 딕셔너리
-        override: 덮어쓸 딕셔너리
-
-    Returns:
-        병합된 새 딕셔너리
-    """
+    """두 딕셔너리를 재귀적으로 깊은 병합한다."""
     result = base.copy()
     for key, value in override.items():
         if key in result and isinstance(result[key], dict) and isinstance(value, dict):
@@ -159,17 +130,7 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 def load_config(path: Path) -> dict:
-    """
-    설정 파일을 로드한다.
-    파일이 없으면 템플릿으로 생성 후 기본값을 반환한다.
-    로드된 값은 DEFAULT_CONFIG와 깊은 병합하여 누락 필드를 보충한다.
-
-    Args:
-        path: 설정 파일 경로
-
-    Returns:
-        설정 딕셔너리 (DEFAULT_CONFIG 기반 + 파일 값)
-    """
+    """설정 파일을 로드한다. 파일이 없으면 템플릿으로 생성 후 기본값을 반환한다."""
     if not path.exists():
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -192,14 +153,7 @@ def load_config(path: Path) -> dict:
 
 
 def save_config(config_path: Path, cfg: dict):
-    """
-    설정을 파일에 저장한다.
-    기존 파일이 있으면 주석을 최대한 유지하면서 값만 업데이트한다.
-
-    Args:
-        config_path: 설정 파일 경로
-        cfg: 저장할 설정 딕셔너리
-    """
+    """설정을 파일에 저장한다."""
     try:
         # 주석 보존 대신 전체 재생성 (정확성 우선)
         content = _generate_config_yaml(cfg)
@@ -211,15 +165,7 @@ def save_config(config_path: Path, cfg: dict):
 
 
 def _generate_config_yaml(cfg: dict) -> str:
-    """
-    설정 딕셔너리를 주석이 포함된 YAML 문자열로 변환한다.
-
-    Args:
-        cfg: 설정 딕셔너리
-
-    Returns:
-        주석 포함 YAML 문자열
-    """
+    """설정 딕셔너리를 주석이 포함된 YAML 문자열로 변환한다."""
     lines = []
     lines.append("# AutoDebug v3 설정 파일")
     lines.append("# 크래시 자동 분석 도구 설정")
@@ -317,16 +263,7 @@ def _generate_config_yaml(cfg: dict) -> str:
 
 
 def validate_config(cfg: dict) -> list[str]:
-    """
-    설정값을 검증하여 오류 메시지 리스트를 반환한다.
-    빈 리스트면 유효한 설정이다.
-
-    Args:
-        cfg: 검증할 설정 딕셔너리
-
-    Returns:
-        오류 메시지 리스트 (빈 리스트 = 유효)
-    """
+    """설정값을 검증하여 오류 메시지 리스트를 반환한다. 빈 리스트면 유효."""
     errors = []
 
     # 필수 경로 검증
@@ -382,16 +319,7 @@ def validate_config(cfg: dict) -> list[str]:
 
 
 def migrate_config(old_cfg: dict) -> dict:
-    """
-    기존 Auto_Debug v1 설정을 v3 형식으로 마이그레이션한다.
-    v1에 없는 새 필드는 기본값으로 채운다.
-
-    Args:
-        old_cfg: 기존 설정 딕셔너리
-
-    Returns:
-        마이그레이션된 설정 딕셔너리
-    """
+    """기존 Auto_Debug v1 설정을 v3 형식으로 마이그레이션한다."""
     new_cfg = deep_merge(DEFAULT_CONFIG, {})
 
     # 기존 필드 이식
